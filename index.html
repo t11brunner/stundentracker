@@ -155,7 +155,12 @@
 <div id="page-mapping" class="page">
   <div class="mapping-header">
     <h2>Fach-Mapping</h2>
-    <button class="btn btn-sm btn-accent" onclick="saveMapping()">Speichern</button>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <input type="file" id="mapping-import-input" accept=".json,application/json" style="display:none">
+      <button class="btn btn-sm" onclick="document.getElementById('mapping-import-input').click()">Importieren</button>
+      <button class="btn btn-sm" onclick="exportMapping()">Exportieren</button>
+      <button class="btn btn-sm btn-accent" onclick="saveMapping()">Speichern</button>
+    </div>
   </div>
 
   <p class="mapping-desc">
@@ -297,6 +302,48 @@ function addRule() {
 
 function deleteRule(i) { rules.splice(i, 1); saveMapping(); }
 
+function exportMapping() {
+  if (!rules.length) { alert('Keine Regeln zum Exportieren.'); return; }
+  const blob = new Blob([JSON.stringify(rules, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'stundentracker-mapping.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importMapping(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    let parsed;
+    try { parsed = JSON.parse(e.target.result); }
+    catch (err) { alert('Datei ist kein gültiges JSON.'); return; }
+    if (!Array.isArray(parsed)) { alert('Datei muss ein Array von Regeln enthalten.'); return; }
+    const valid = parsed
+      .filter(r => r && typeof r.pattern === 'string' && typeof r.subject === 'string')
+      .map(r => ({ pattern: r.pattern.trim(), subject: r.subject.trim().toLowerCase() }))
+      .filter(r => r.pattern && r.subject);
+    if (!valid.length) { alert('Keine gültigen Regeln in der Datei gefunden.'); return; }
+    // dedupe inside the imported set, last occurrence wins
+    const seen = new Map();
+    valid.forEach(r => seen.set(r.pattern.toLowerCase(), r));
+    const next = [...seen.values()];
+    if (rules.length && !confirm(`${rules.length} bestehende Regel${rules.length>1?'n':''} werden durch ${next.length} aus der Datei ersetzt. Fortfahren?`)) return;
+    rules = next;
+    saveMapping();
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('mapping-import-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) importMapping(file);
+  e.target.value = '';
+});
+
 function clickUnknown(title) {
   document.getElementById('new-pattern').value = title;
   document.getElementById('new-subj').focus();
@@ -305,9 +352,11 @@ function clickUnknown(title) {
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement.id === 'new-subj') addRule(); });
 
 // ── SUBJECT RESOLUTION ──
+// Longest pattern wins so "Thermodynamics III" beats "Thermodynamics II".
 function resolveSubject(summary) {
   const s = summary.toLowerCase();
-  for (const r of rules) { if (s.includes(r.pattern.toLowerCase())) return r.subject; }
+  const sorted = [...rules].sort((a, b) => b.pattern.length - a.pattern.length);
+  for (const r of sorted) { if (s.includes(r.pattern.toLowerCase())) return r.subject; }
   return null;
 }
 
