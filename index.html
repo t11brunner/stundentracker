@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stundenanalyse</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0e0e0f; --surface: #161618; --surface2: #1e1e21;
+      --border: rgba(255,255,255,0.07); --border2: rgba(255,255,255,0.12);
+      --text: #f0f0ee; --muted: #888884;
+      --accent: #c8f060; --accent2: #60c8f0; --accent3: #f060a0;
+      --mono: 'DM Mono', monospace; --sans: 'DM Sans', sans-serif;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans); font-weight: 300; min-height: 100vh; }
+    header { padding: 3rem 2.5rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem; flex-wrap: wrap; }
+    .logo { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.5rem; }
+    h1 { font-family: var(--mono); font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 300; letter-spacing: -0.02em; line-height: 1; }
+    h1 span { color: var(--accent); }
+    .btn { display: inline-block; padding: 0.6rem 1.4rem; border: 1px solid var(--border2); border-radius: 6px; font-family: var(--mono); font-size: 12px; color: var(--text); background: transparent; cursor: pointer; letter-spacing: 0.06em; transition: border-color 0.2s, background 0.2s; }
+    .btn:hover { border-color: var(--accent); background: rgba(200,240,96,0.07); }
+    .btn-accent { border-color: var(--accent); color: var(--accent); }
+    .btn-sm { padding: 0.35rem 0.8rem; font-size: 11px; }
+    .btn-danger { border-color: rgba(240,96,96,0.4); color: #f06060; }
+    .btn-danger:hover { border-color: #f06060; background: rgba(240,96,96,0.07); }
+
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 2.5rem; }
+    .tab { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); padding: 1rem 1.25rem; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* UPLOAD */
+    #page-upload { padding: 2.5rem; max-width: 640px; margin: 3rem auto; text-align: center; }
+    .drop-zone { border: 1px dashed var(--border2); border-radius: 12px; padding: 3rem 2rem; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(200,240,96,0.04); }
+    .drop-icon { font-family: var(--mono); font-size: 2.5rem; color: var(--accent); margin-bottom: 1rem; display: block; }
+    .drop-title { font-size: 1.1rem; font-weight: 400; margin-bottom: 0.5rem; }
+    .drop-sub { font-size: 0.8rem; color: var(--muted); font-family: var(--mono); line-height: 1.6; }
+    .how-to { margin-top: 2.5rem; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem; }
+    .how-to h3 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.75rem; }
+    .how-to ol { list-style: none; counter-reset: steps; }
+    .how-to li { counter-increment: steps; font-size: 13px; color: var(--muted); padding: 0.3rem 0 0.3rem 1.75rem; position: relative; }
+    .how-to li::before { content: counter(steps); position: absolute; left: 0; font-family: var(--mono); font-size: 11px; color: var(--accent); top: 0.35rem; }
+    .how-to li strong { color: var(--text); font-weight: 400; }
+
+    /* MAPPING */
+    #page-mapping { padding: 2.5rem; }
+    .mapping-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+    .mapping-header h2 { font-family: var(--mono); font-size: 14px; font-weight: 400; color: var(--text); }
+    .mapping-desc { font-size: 13px; color: var(--muted); margin-bottom: 1.5rem; line-height: 1.8; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; }
+    .mapping-desc code { font-family: var(--mono); color: var(--accent2); font-size: 12px; background: rgba(96,200,240,0.08); padding: 1px 5px; border-radius: 3px; }
+    .add-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem; padding: 1rem 1.25rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+    .add-row label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+    .add-row input { background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px; font-family: var(--mono); font-size: 12px; color: var(--text); padding: 0.45rem 0.75rem; outline: none; transition: border-color 0.2s; }
+    .add-row input:focus { border-color: var(--accent2); }
+    .add-row input::placeholder { color: var(--muted); }
+    .add-row input.w-pattern { width: 240px; }
+    .add-row input.w-subj { width: 100px; }
+
+    .mapping-table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+    .mapping-table th { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+    .mapping-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; font-family: var(--mono); font-size: 12px; }
+    .mapping-table tbody tr:hover td { background: var(--surface2); }
+    .tag-pill { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 20px; background: rgba(200,240,96,0.1); color: var(--accent); border: 1px solid rgba(200,240,96,0.2); }
+    .pattern-text { color: var(--text); }
+
+    .unknown-section { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+    .unknown-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.75rem; }
+    .unknown-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .unknown-pill { font-family: var(--mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; background: var(--surface2); color: var(--muted); cursor: pointer; border: 1px solid var(--border); transition: border-color 0.15s, color 0.15s; }
+    .unknown-pill:hover { border-color: var(--accent2); color: var(--accent2); }
+
+    /* STATS */
+    #page-stats { padding: 0 2.5rem 4rem; }
+    .top-bar { display: flex; align-items: center; justify-content: space-between; padding: 1.5rem 0; border-bottom: 1px solid var(--border); margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem; }
+    .filename { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+    .filename span { color: var(--accent); }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 2.5rem; }
+    .metric { background: var(--surface); padding: 1.25rem 1.5rem; }
+    .metric-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.5rem; }
+    .metric-value { font-family: var(--mono); font-size: 1.8rem; font-weight: 400; color: var(--accent); line-height: 1; }
+    .metric-sub { font-size: 11px; color: var(--muted); margin-top: 0.25rem; }
+    .section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; margin-bottom: 1rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+    @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; }
+    .panel.full { margin-bottom: 2rem; }
+    .subject-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-family: var(--mono); font-size: 12px; }
+    .subject-code { width: 80px; color: var(--text); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-track { flex: 1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s cubic-bezier(.22,1,.36,1); }
+    .bar-hours { width: 48px; text-align: right; color: var(--muted); }
+    .chart-wrap { position: relative; width: 100%; height: 220px; }
+    .unmapped-notice { background: rgba(240,192,96,0.08); border: 1px solid rgba(240,192,96,0.2); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-family: var(--mono); font-size: 12px; color: #f0c060; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">Studienanalyse</div>
+    <h1>Stunden<span>tracker</span></h1>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('upload')">[ .ics laden ]</div>
+  <div class="tab" onclick="switchTab('mapping')">Fach-Mapping</div>
+  <div class="tab" onclick="switchTab('stats')" id="tab-stats" style="display:none">Statistiken</div>
+</div>
+
+<!-- UPLOAD -->
+<div id="page-upload" class="page active">
+  <div style="max-width:640px;margin:3rem auto;text-align:center;padding:0 2.5rem;">
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <span class="drop-icon">[ .ics ]</span>
+      <div class="drop-title">Kalender hier ablegen</div>
+      <div class="drop-sub">Eine oder mehrere .ics Dateien gleichzeitig<br>Alle Daten bleiben lokal in deinem Browser</div>
+      <button class="btn btn-accent" style="margin-top:1.5rem">Dateien auswählen</button>
+      <input type="file" id="file-input" accept=".ics" multiple style="display:none">
+    </div>
+
+    <div id="file-list" style="display:none;margin-top:1.25rem;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;padding:0.75rem 1rem;border-bottom:1px solid var(--border);">Geladene Dateien</div>
+      <div id="file-list-items"></div>
+      <div style="padding:0.75rem 1rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+        <span id="file-list-summary" style="font-family:var(--mono);font-size:11px;color:var(--muted);"></span>
+        <div style="display:flex;gap:0.5rem;">
+          <button class="btn btn-sm" onclick="clearFiles()">Leeren</button>
+          <button class="btn btn-sm btn-accent" onclick="analyzeAll()">Analysieren →</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="how-to">
+      <h3>So exportierst du deinen Kalender</h3>
+      <ol>
+        <li>Mac: <strong>Kalender.app</strong> öffnen</li>
+        <li>Oben: <strong>Ablage → Exportieren → Exportieren…</strong></li>
+        <li>Als <strong>.ics</strong> Datei speichern</li>
+        <li>Datei oben hochladen</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- MAPPING -->
+<div id="page-mapping" class="page">
+  <div class="mapping-header">
+    <h2>Fach-Mapping</h2>
+    <button class="btn btn-sm btn-accent" onclick="saveMapping()">Speichern</button>
+  </div>
+
+  <p class="mapping-desc">
+    Definiere hier, welche Kalender-Titel zu welchem Fach gehören.<br>
+    Der Kalender-Titel muss den Begriff <strong>enthalten</strong> (Gross-/Kleinschreibung egal).<br>
+    Beispiel: <code>Fluid Dynamics</code> → <code>flu2</code> &nbsp;erfasst sowohl <code>V Fluid Dynamics II</code> als auch <code>U Fluid Dynamics II</code>.
+  </p>
+
+  <div class="add-row">
+    <label>Wenn Titel enthält</label>
+    <input class="w-pattern" id="new-pattern" placeholder="z.B. Fluid Dynamics" />
+    <label>→ Fach</label>
+    <input class="w-subj" id="new-subj" placeholder="z.B. flu2" />
+    <button class="btn btn-sm btn-accent" onclick="addRule()">+ Hinzufügen</button>
+  </div>
+
+  <table class="mapping-table" id="mapping-table">
+    <thead>
+      <tr>
+        <th style="width:55%">Wenn Titel enthält…</th>
+        <th style="width:25%">→ Fach</th>
+        <th style="width:20%"></th>
+      </tr>
+    </thead>
+    <tbody id="mapping-body"></tbody>
+  </table>
+
+  <div class="unknown-section" id="unknown-section" style="display:none">
+    <div class="unknown-title">Unbekannte Titel aus letzter .ics — anklicken um Regel zu erstellen</div>
+    <div class="unknown-list" id="unknown-list"></div>
+  </div>
+</div>
+
+<!-- STATS -->
+<div id="page-stats" class="page">
+  <div class="top-bar">
+    <div class="filename">Dateien: <span id="filename-label">–</span></div>
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+      <button class="btn btn-sm" onclick="switchTab('mapping')">Mapping bearbeiten</button>
+      <button class="btn btn-sm" onclick="switchTab('upload')">← Neue Datei</button>
+    </div>
+  </div>
+
+  <div id="unmapped-notice" class="unmapped-notice" style="display:none">
+    <span id="unmapped-text"></span>
+    <button class="btn btn-sm" onclick="switchTab('mapping')">Im Mapping ergänzen →</button>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">Stunden total</div><div class="metric-value" id="s-total">–</div><div class="metric-sub">erfasste Lernzeit</div></div>
+    <div class="metric"><div class="metric-label">Events</div><div class="metric-value" id="s-events">–</div><div class="metric-sub">gemappte Einträge</div></div>
+    <div class="metric"><div class="metric-label">Fächer</div><div class="metric-value" id="s-subjects">–</div><div class="metric-sub">Kürzel</div></div>
+    <div class="metric"><div class="metric-label">Ø pro Tag</div><div class="metric-value" id="s-perday">–</div><div class="metric-sub">an Lerntagen</div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="section-label">Stunden nach Fach</div>
+      <div id="subject-bars"></div>
+    </div>
+    <div class="panel">
+      <div class="section-label">Verteilung</div>
+      <div class="chart-wrap"><canvas id="pie-chart" role="img" aria-label="Kreisdiagramm Stunden nach Fach"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel full">
+    <div class="section-label">Stunden pro Monat nach Fach</div>
+    <div class="chart-wrap" style="height:260px"><canvas id="month-chart" role="img" aria-label="Gestapeltes Balkendiagramm Stunden pro Monat"></canvas></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="section-label">Nach Wochentag</div>
+      <div id="weekday-bars"></div>
+    </div>
+    <div class="panel">
+      <div class="section-label">Nach Tageszeit</div>
+      <div id="hour-bars"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = ['#c8f060','#60c8f0','#f060a0','#f0c060','#60f0a0','#a060f0','#f09060','#60f0f0','#f060f0','#90f060'];
+const STORAGE_KEY = 'stundentracker_mapping_v1';
+let rules = [];
+let charts = [];
+let lastEvents = [];
+let lastFile = '';
+
+// ── TABS ──
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll(`.tab`).forEach(t => { if (t.getAttribute('onclick') === `switchTab('${name}')`) t.classList.add('active'); });
+  document.getElementById('page-' + name).classList.add('active');
+}
+
+// ── MAPPING ──
+function loadMapping() {
+  try { const s = localStorage.getItem(STORAGE_KEY); if (s) rules = JSON.parse(s); } catch(e) { rules = []; }
+  renderMappingTable();
+}
+
+function saveMapping() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rules)); } catch(e) {}
+  renderMappingTable();
+  if (lastEvents.length) renderStats(lastEvents, lastFile);
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function renderMappingTable() {
+  const tbody = document.getElementById('mapping-body');
+  if (!rules.length) {
+    tbody.innerHTML = `<tr><td colspan="3" style="color:var(--muted);padding:1rem 0.75rem;font-size:12px;">Noch keine Regeln definiert.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rules.map((r, i) => `
+    <tr>
+      <td><span class="pattern-text">${esc(r.pattern)}</span></td>
+      <td><span class="tag-pill">${esc(r.subject)}</span></td>
+      <td style="text-align:right"><button class="btn btn-sm btn-danger" onclick="deleteRule(${i})">entfernen</button></td>
+    </tr>`).join('');
+}
+
+function addRule() {
+  const pattern = document.getElementById('new-pattern').value.trim();
+  const subject = document.getElementById('new-subj').value.trim().toLowerCase();
+  if (!pattern || !subject) { alert('Bitte beide Felder ausfüllen.'); return; }
+  // avoid duplicates
+  if (rules.some(r => r.pattern.toLowerCase() === pattern.toLowerCase())) { alert('Diese Regel existiert bereits.'); return; }
+  rules.unshift({ pattern, subject });
+  document.getElementById('new-pattern').value = '';
+  document.getElementById('new-subj').value = '';
+  saveMapping();
+}
+
+function deleteRule(i) { rules.splice(i, 1); saveMapping(); }
+
+function clickUnknown(title) {
+  document.getElementById('new-pattern').value = title;
+  document.getElementById('new-subj').focus();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement.id === 'new-subj') addRule(); });
+
+// ── SUBJECT RESOLUTION ──
+function resolveSubject(summary) {
+  const s = summary.toLowerCase();
+  for (const r of rules) { if (s.includes(r.pattern.toLowerCase())) return r.subject; }
+  return null;
+}
+
+// ── ICS PARSING ──
+function parseICS(text) {
+  const events = [];
+  const blocks = text.split('BEGIN:VEVENT');
+  for (let i = 1; i < blocks.length; i++) {
+    const b = blocks[i];
+    const get = key => { const m = b.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)')); return m ? m[1].trim() : null; };
+    const rawStart = get('DTSTART') || get('DTSTART;VALUE=DATE') || get('DTSTART;TZID=[^:]+');
+    const rawEnd   = get('DTEND')   || get('DTEND;VALUE=DATE')   || get('DTEND;TZID=[^:]+');
+    const summary  = get('SUMMARY') || '';
+    const pd = s => {
+      if (!s) return null; s = s.replace(/Z$/,'');
+      if (s.length===8) return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),0,0);
+      return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),+s.slice(9,11)||0,+s.slice(11,13)||0);
+    };
+    const start = pd(rawStart), end = pd(rawEnd);
+    if (!start || isNaN(start)) continue;
+    const durH = (end && !isNaN(end) && end > start) ? (end-start)/3600000 : null;
+    events.push({ start, end, durH, summary });
+  }
+  return events;
+}
+
+// ── FILE HANDLING (multi-file) ──
+let loadedFiles = []; // [{name, events}]
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); addFiles(e.dataTransfer.files); });
+document.getElementById('file-input').addEventListener('change', e => { addFiles(e.target.files); e.target.value=''; });
+
+function addFiles(fileList) {
+  const files = [...fileList].filter(f => f.name.endsWith('.ics'));
+  if (!files.length) return;
+  let pending = files.length;
+  files.forEach(file => {
+    // skip duplicates
+    if (loadedFiles.some(lf => lf.name === file.name)) { pending--; if (!pending) renderFileList(); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const events = parseICS(e.target.result);
+      loadedFiles.push({ name: file.name, events });
+      pending--;
+      if (!pending) renderFileList();
+    };
+    reader.readAsText(file);
+  });
+}
+
+function renderFileList() {
+  const list = document.getElementById('file-list');
+  const items = document.getElementById('file-list-items');
+  const summary = document.getElementById('file-list-summary');
+  if (!loadedFiles.length) { list.style.display='none'; return; }
+  list.style.display = 'block';
+  const totalEv = loadedFiles.reduce((a,f)=>a+f.events.length,0);
+  summary.textContent = `${loadedFiles.length} Datei${loadedFiles.length>1?'en':''} · ${totalEv} Events total`;
+  items.innerHTML = loadedFiles.map((f,i) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 1rem;border-bottom:1px solid var(--border);gap:1rem;">
+      <div style="display:flex;align-items:center;gap:0.75rem;min-width:0;">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--accent);flex-shrink:0;">✓</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.name)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-shrink:0;">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">${f.events.length} Events</span>
+        <button class="btn btn-sm btn-danger" onclick="removeFile(${i})">×</button>
+      </div>
+    </div>`).join('');
+}
+
+function removeFile(i) {
+  loadedFiles.splice(i, 1);
+  renderFileList();
+}
+
+function clearFiles() {
+  loadedFiles = [];
+  renderFileList();
+}
+
+function analyzeAll() {
+  if (!loadedFiles.length) return;
+  // merge all events, deduplicate by uid or start+summary
+  const seen = new Set();
+  const merged = [];
+  loadedFiles.forEach(f => {
+    f.events.forEach(ev => {
+      const key = `${ev.start?.getTime()}_${ev.summary}`;
+      if (!seen.has(key)) { seen.add(key); merged.push(ev); }
+    });
+  });
+  lastEvents = merged;
+  lastFile = loadedFiles.length === 1 ? loadedFiles[0].name : `${loadedFiles.length} Dateien`;
+  if (!merged.length) { alert('Keine Events gefunden.'); return; }
+  renderStats(merged, lastFile);
+  document.getElementById('tab-stats').style.display = '';
+  switchTab('stats');
+}
+
+// ── RENDER STATS ──
+function renderStats(events, fname) {
+  charts.forEach(c => c.destroy()); charts = [];
+  const withDur = events.filter(e => e.durH !== null && e.durH > 0 && e.durH <= 24);
+
+  const unmappedTitles = new Set();
+  const subjectHours = {};
+  withDur.forEach(e => {
+    const subj = resolveSubject(e.summary);
+    if (!subj) { unmappedTitles.add(e.summary); return; }
+    subjectHours[subj] = (subjectHours[subj]||0) + e.durH;
+  });
+
+  // Unmapped notice + unknown pills
+  const notice = document.getElementById('unmapped-notice');
+  const unknownSec = document.getElementById('unknown-section');
+  if (unmappedTitles.size) {
+    notice.style.display = 'flex';
+    document.getElementById('unmapped-text').textContent = `${unmappedTitles.size} Kalender-Titel ohne Mapping → werden nicht gezählt`;
+    unknownSec.style.display = 'block';
+    document.getElementById('unknown-list').innerHTML = [...unmappedTitles].slice(0,40).map(t =>
+      `<span class="unknown-pill" onclick="clickUnknown(${JSON.stringify(t)});switchTab('mapping')">${esc(t)}</span>`).join('');
+  } else {
+    notice.style.display = 'none';
+    unknownSec.style.display = 'none';
+  }
+
+  const subjects = Object.entries(subjectHours).sort((a,b)=>b[1]-a[1]);
+  const subjList = subjects.map(s=>s[0]);
+  const colorMap = {}; subjList.forEach((s,i) => colorMap[s]=COLORS[i%COLORS.length]);
+  const totalH = subjects.reduce((a,b)=>a+b[1],0);
+  const mappedEv = withDur.filter(e=>resolveSubject(e.summary));
+  const daySet = new Set(mappedEv.map(e=>e.start.toDateString()));
+  const avgPerDay = daySet.size ? totalH/daySet.size : 0;
+
+  document.getElementById('s-total').textContent    = totalH.toFixed(1)+'h';
+  document.getElementById('s-events').textContent   = mappedEv.length;
+  document.getElementById('s-subjects').textContent = subjects.length;
+  document.getElementById('s-perday').textContent   = avgPerDay.toFixed(1)+'h';
+  document.getElementById('filename-label').textContent = fname;
+
+  const maxH = subjects[0]?.[1]||1;
+  document.getElementById('subject-bars').innerHTML = subjects.map(([code,h])=>`
+    <div class="subject-bar">
+      <span class="subject-code" title="${esc(code)}">${esc(code)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(h/maxH*100)}%;background:${colorMap[code]}"></div></div>
+      <span class="bar-hours">${h.toFixed(1)}h</span>
+    </div>`).join('');
+
+  charts.push(new Chart(document.getElementById('pie-chart'), {
+    type: 'doughnut',
+    data: { labels: subjList, datasets: [{ data: subjList.map(s=>+subjectHours[s].toFixed(2)), backgroundColor: subjList.map(s=>colorMap[s]), borderWidth:0, hoverOffset:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'60%', plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed.toFixed(1)}h (${Math.round(ctx.parsed/totalH*100)}%)`}}}}
+  }));
+
+  const monthMap = {};
+  mappedEv.forEach(e => {
+    const subj = resolveSubject(e.summary);
+    const key = `${e.start.getFullYear()}-${String(e.start.getMonth()+1).padStart(2,'0')}`;
+    if (!monthMap[key]) monthMap[key]={};
+    monthMap[key][subj] = (monthMap[key][subj]||0)+e.durH;
+  });
+  const mk = Object.keys(monthMap).sort();
+  const ml = mk.map(k=>{ const [y,m]=k.split('-'); return ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'][+m-1]+' '+y.slice(2); });
+  charts.push(new Chart(document.getElementById('month-chart'), {
+    type: 'bar',
+    data: { labels: ml, datasets: subjList.map(s=>({ label:s, data:mk.map(k=>+(monthMap[k]?.[s]||0).toFixed(2)), backgroundColor:colorMap[s], borderWidth:0, borderRadius:2 })) },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:{mode:'index'}},
+      scales:{ x:{stacked:true, ticks:{color:'#888884',font:{family:'DM Mono',size:10},autoSkip:false,maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}}, y:{stacked:true, ticks:{color:'#888884',font:{family:'DM Mono',size:10},callback:v=>v+'h'},grid:{color:'rgba(255,255,255,0.06)'}}}}
+  }));
+
+  const wdH = Array(7).fill(0);
+  mappedEv.forEach(e => { wdH[(e.start.getDay()+6)%7]+=e.durH; });
+  const wdMax=Math.max(...wdH)||1;
+  document.getElementById('weekday-bars').innerHTML = ['Mo','Di','Mi','Do','Fr','Sa','So'].map((d,i)=>`
+    <div class="subject-bar"><span class="subject-code">${d}</span>
+    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(wdH[i]/wdMax*100)}%;background:var(--accent2)"></div></div>
+    <span class="bar-hours">${wdH[i].toFixed(1)}h</span></div>`).join('');
+
+  const hourH=Array(24).fill(0);
+  mappedEv.forEach(e=>{ hourH[e.start.getHours()]+=e.durH; });
+  const topH=hourH.map((h,i)=>({i,h})).filter(x=>x.h>0).sort((a,b)=>b.h-a.h).slice(0,8);
+  const hMax=topH[0]?.h||1;
+  document.getElementById('hour-bars').innerHTML = topH.map(({i,h})=>`
+    <div class="subject-bar"><span class="subject-code">${String(i).padStart(2,'0')}:00</span>
+    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(h/hMax*100)}%;background:var(--accent3)"></div></div>
+    <span class="bar-hours">${h.toFixed(1)}h</span></div>`).join('');
+}
+
+loadMapping();
+</script>
+</body>
+</html>
