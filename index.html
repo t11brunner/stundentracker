@@ -438,9 +438,12 @@ function resolveSubject(summary) {
 // ── ICS PARSING ──
 function parseICS(text) {
   const pd = s => {
-    if (!s) return null; s = s.replace(/Z$/,'');
+    if (!s) return null;
+    const isUTC = /Z$/.test(s);
+    s = s.replace(/Z$/,'');
     if (s.length===8) return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),0,0);
-    return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),+s.slice(9,11)||0,+s.slice(11,13)||0);
+    const y=+s.slice(0,4), mo=+s.slice(4,6)-1, da=+s.slice(6,8), h=+s.slice(9,11)||0, mi=+s.slice(11,13)||0;
+    return isUTC ? new Date(Date.UTC(y,mo,da,h,mi)) : new Date(y,mo,da,h,mi);
   };
   const localKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const getFrom    = (b, key) => { const m = b.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)')); return m ? m[1].trim() : null; };
