@@ -437,27 +437,44 @@ function resolveSubject(summary) {
 
 // ── ICS PARSING ──
 function parseICS(text) {
+  const pd = s => {
+    if (!s) return null; s = s.replace(/Z$/,'');
+    if (s.length===8) return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),0,0);
+    return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),+s.slice(9,11)||0,+s.slice(11,13)||0);
+  };
+  const localKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const getFrom    = (b, key) => { const m = b.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)')); return m ? m[1].trim() : null; };
+  const getAllFrom = (b, key) => { const re = new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)', 'g'); const res = []; let m; while ((m = re.exec(b)) !== null) res.push(m[1].trim()); return res; };
+
+  const blocks = text.split('BEGIN:VEVENT').slice(1);
+
+  // Pass 1: Sammle für jede UID die Daten der Override-Events (RECURRENCE-ID).
+  // Diese Daten werden bei der RRULE-Expansion des Master-Events übersprungen.
+  const overrides = new Map(); // uid -> Set<localDateKey>
+  for (const b of blocks) {
+    const uid   = getFrom(b, 'UID');
+    const recId = getFrom(b, 'RECURRENCE-ID');
+    if (!uid || !recId) continue;
+    const d = pd(recId);
+    if (!d || isNaN(d)) continue;
+    if (!overrides.has(uid)) overrides.set(uid, new Set());
+    overrides.get(uid).add(localKey(d));
+  }
+
+  // Pass 2: Events parsen, RRULEs expandieren.
   const events = [];
-  const blocks = text.split('BEGIN:VEVENT');
-  for (let i = 1; i < blocks.length; i++) {
-    const b = blocks[i];
-    const get    = key => { const m = b.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)')); return m ? m[1].trim() : null; };
-    const getAll = key => { const re = new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)', 'g'); const res = []; let m; while ((m = re.exec(b)) !== null) res.push(m[1].trim()); return res; };
-    const rawStart = get('DTSTART');
-    const rawEnd   = get('DTEND');
-    const summary  = get('SUMMARY') || '';
-    const rrule    = get('RRULE');
-    const pd = s => {
-      if (!s) return null; s = s.replace(/Z$/,'');
-      if (s.length===8) return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),0,0);
-      return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),+s.slice(9,11)||0,+s.slice(11,13)||0);
-    };
-    const localKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  for (const b of blocks) {
+    const rawStart = getFrom(b, 'DTSTART');
+    const rawEnd   = getFrom(b, 'DTEND');
+    const summary  = getFrom(b, 'SUMMARY') || '';
+    const rrule    = getFrom(b, 'RRULE');
+    const uid      = getFrom(b, 'UID');
     const start = pd(rawStart), end = pd(rawEnd);
     if (!start || isNaN(start)) continue;
     const durH = (end && !isNaN(end) && end > start) ? (end-start)/3600000 : null;
 
     if (!rrule) {
+      // Einzelevent oder Override-Event (mit RECURRENCE-ID, eigenes DTSTART): normal einfügen.
       events.push({ start, end, durH, summary });
       continue;
     }
@@ -469,7 +486,10 @@ function parseICS(text) {
     const count    = parseInt(rrule.match(/COUNT=(\d+)/)?.[1]    || '0');
     if (freq !== 'WEEKLY') { events.push({ start, end, durH, summary }); continue; }
 
-    const exDateSet = new Set(getAll('EXDATE').map(s => { const d = pd(s); return d ? localKey(d) : null; }).filter(Boolean));
+    // Auszuschliessende Daten: EXDATE plus RECURRENCE-ID-Overrides für diese UID.
+    const exDateSet = new Set(getAllFrom(b, 'EXDATE').map(s => { const d = pd(s); return d ? localKey(d) : null; }).filter(Boolean));
+    if (uid && overrides.has(uid)) overrides.get(uid).forEach(k => exDateSet.add(k));
+
     const durMs     = (end && !isNaN(end)) ? (end - start) : 3600000;
     // Enddatum: UNTIL > COUNT > Fallback 2 Jahre
     const limitDate = until
