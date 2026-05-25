@@ -659,6 +659,17 @@ function renderStats(events, fname) {
     const key = e.start.toISOString().slice(0,10);
     dayMap[key] = (dayMap[key]||0) + e.durH;
   });
+  // Lücken füllen: alle Tage zwischen erstem und letztem Event mit 0
+  if (Object.keys(dayMap).length) {
+    const sorted = Object.keys(dayMap).sort();
+    const cur = new Date(sorted[0]);
+    const last = new Date(sorted[sorted.length-1]);
+    while (cur <= last) {
+      const key = cur.toISOString().slice(0,10);
+      if (!(key in dayMap)) dayMap[key] = 0;
+      cur.setDate(cur.getDate()+1);
+    }
+  }
   const days = Object.keys(dayMap).sort();
   const dayLabels = days.map(d => { const p=d.split('-'); return `${p[2]}.${p[1]}`; });
   charts.push(new Chart(document.getElementById('day-chart'), {
