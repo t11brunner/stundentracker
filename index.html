@@ -99,6 +99,28 @@
     .bar-hours { width: 48px; text-align: right; color: var(--muted); }
     .chart-wrap { position: relative; width: 100%; height: 220px; }
     .unmapped-notice { background: rgba(240,192,96,0.08); border: 1px solid rgba(240,192,96,0.2); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-family: var(--mono); font-size: 12px; color: #f0c060; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+    /* DATE FILTER */
+    #date-filter { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.75rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1.5rem; }
+    .date-input { background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px; font-family: var(--mono); font-size: 12px; color: var(--text); padding: 0.4rem 0.6rem; outline: none; transition: border-color 0.2s; color-scheme: dark; }
+    .date-input:focus { border-color: var(--accent2); }
+
+    /* PRINT / PDF */
+    @media print {
+      header, .tabs, #page-upload, #page-mapping,
+      .top-bar, #date-filter, #unmapped-notice,
+      #pdf-btn { display: none !important; }
+      #page-stats { display: block !important; padding: 0; }
+      body { background: #fff; color: #111; }
+      .panel { background: #f8f8f8 !important; border: 1px solid #ddd !important; break-inside: avoid; }
+      .metric { background: #f8f8f8 !important; }
+      .metrics { background: #ddd !important; }
+      .bar-track { background: #e0e0e0 !important; }
+      .section-label, .metric-label { color: #666 !important; }
+      .metric-value { color: #333 !important; }
+      .bar-hours, .subject-code { color: #555 !important; }
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -199,9 +221,19 @@
   <div class="top-bar">
     <div class="filename">Dateien: <span id="filename-label">–</span></div>
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+      <button id="pdf-btn" class="btn btn-sm" onclick="window.print()">Als PDF exportieren ↓</button>
       <button class="btn btn-sm" onclick="switchTab('mapping')">Mapping bearbeiten</button>
       <button class="btn btn-sm" onclick="switchTab('upload')">← Neue Datei</button>
     </div>
+  </div>
+
+  <div id="date-filter">
+    <span class="section-label" style="margin:0">Zeitraum</span>
+    <input type="date" id="filter-from" class="date-input" title="Von">
+    <span style="color:var(--muted);font-family:var(--mono);font-size:12px;">→</span>
+    <input type="date" id="filter-to" class="date-input" title="Bis">
+    <button class="btn btn-sm btn-accent" onclick="applyFilter()">Anwenden</button>
+    <button class="btn btn-sm" onclick="resetFilter()">Zurücksetzen</button>
   </div>
 
   <div id="unmapped-notice" class="unmapped-notice" style="display:none">
@@ -223,7 +255,7 @@
     </div>
     <div class="panel">
       <div class="section-label">Verteilung</div>
-      <div class="chart-wrap"><canvas id="pie-chart" role="img" aria-label="Kreisdiagramm Stunden nach Fach"></canvas></div>
+      <div class="chart-wrap" style="height:260px"><canvas id="pie-chart" role="img" aria-label="Kreisdiagramm Stunden nach Fach"></canvas></div>
     </div>
   </div>
 
@@ -242,6 +274,16 @@
       <div id="hour-bars"></div>
     </div>
   </div>
+
+  <div class="panel full">
+    <div class="section-label">Stunden pro Woche</div>
+    <div class="chart-wrap" style="height:200px"><canvas id="week-chart" role="img" aria-label="Balkendiagramm Stunden pro Woche"></canvas></div>
+  </div>
+
+  <div class="panel full">
+    <div class="section-label">Stunden pro Tag</div>
+    <div class="chart-wrap" style="height:200px"><canvas id="day-chart" role="img" aria-label="Balkendiagramm Stunden pro Tag"></canvas></div>
+  </div>
 </div>
 
 <script>
@@ -251,6 +293,39 @@ let rules = [];
 let charts = [];
 let lastEvents = [];
 let lastFile = '';
+let filterFrom = null, filterTo = null;
+
+function getFilteredEvents() {
+  if (!filterFrom && !filterTo) return lastEvents;
+  return lastEvents.filter(e => {
+    if (filterFrom && e.start < filterFrom) return false;
+    if (filterTo && e.start > filterTo) return false;
+    return true;
+  });
+}
+
+function applyFilter() {
+  const f = document.getElementById('filter-from').value;
+  const t = document.getElementById('filter-to').value;
+  filterFrom = f ? new Date(f) : null;
+  filterTo   = t ? new Date(t + 'T23:59:59') : null;
+  renderStats(getFilteredEvents(), lastFile);
+}
+
+function resetFilter() {
+  filterFrom = filterTo = null;
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value = '';
+  if (lastEvents.length) renderStats(lastEvents, lastFile);
+}
+
+function isoWeekLabel(d) {
+  const t = new Date(d); t.setHours(0,0,0,0);
+  t.setDate(t.getDate() + 3 - (t.getDay()+6)%7);
+  const w1 = new Date(t.getFullYear(),0,4);
+  const wn = 1 + Math.round(((t-w1)/86400000 - 3 + (w1.getDay()+6)%7)/7);
+  return `${t.getFullYear()}-KW${String(wn).padStart(2,'0')}`;
+}
 
 // ── TABS ──
 function switchTab(name) {
@@ -455,6 +530,10 @@ function analyzeAll() {
   lastEvents = merged;
   lastFile = loadedFiles.length === 1 ? loadedFiles[0].name : `${loadedFiles.length} Dateien`;
   if (!merged.length) { alert('Keine Events gefunden.'); return; }
+  // Filter zurücksetzen bei neuer Analyse
+  filterFrom = filterTo = null;
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value = '';
   renderStats(merged, lastFile);
   document.getElementById('tab-stats').style.display = '';
   switchTab('stats');
@@ -512,7 +591,13 @@ function renderStats(events, fname) {
   charts.push(new Chart(document.getElementById('pie-chart'), {
     type: 'doughnut',
     data: { labels: subjList, datasets: [{ data: subjList.map(s=>+subjectHours[s].toFixed(2)), backgroundColor: subjList.map(s=>colorMap[s]), borderWidth:0, hoverOffset:4 }] },
-    options: { responsive:true, maintainAspectRatio:false, cutout:'60%', plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed.toFixed(1)}h (${Math.round(ctx.parsed/totalH*100)}%)`}}}}
+    options: { responsive:true, maintainAspectRatio:false, cutout:'60%', plugins:{
+      legend:{
+        display:true, position:'bottom',
+        labels:{ color:'#f0f0ee', font:{family:'DM Mono, monospace',size:11}, boxWidth:12, boxHeight:12, padding:16, usePointStyle:true, pointStyle:'rectRounded' }
+      },
+      tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed.toFixed(1)}h (${Math.round(ctx.parsed/totalH*100)}%)`}}
+    }}
   }));
 
   const monthMap = {};
@@ -547,6 +632,46 @@ function renderStats(events, fname) {
     <div class="subject-bar"><span class="subject-code">${String(i).padStart(2,'0')}:00</span>
     <div class="bar-track"><div class="bar-fill" style="width:${Math.round(h/hMax*100)}%;background:var(--accent3)"></div></div>
     <span class="bar-hours">${h.toFixed(1)}h</span></div>`).join('');
+
+  // Stunden pro Woche
+  const weekMap = {};
+  mappedEv.forEach(e => {
+    const key = isoWeekLabel(e.start);
+    weekMap[key] = (weekMap[key]||0) + e.durH;
+  });
+  const wks = Object.keys(weekMap).sort();
+  const wkLabels = wks.map(k => k.split('-')[1]); // "KW01"
+  charts.push(new Chart(document.getElementById('week-chart'), {
+    type: 'bar',
+    data: { labels: wkLabels, datasets: [{ data: wks.map(k=>+weekMap[k].toFixed(2)), backgroundColor: '#c8f060', borderWidth:0, borderRadius:2 }] },
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y.toFixed(1)}h`}} },
+      scales:{
+        x:{ ticks:{color:'#888884',font:{family:'DM Mono',size:10},maxRotation:45,autoSkip:true,maxTicksLimit:26}, grid:{color:'rgba(255,255,255,0.04)'} },
+        y:{ ticks:{color:'#888884',font:{family:'DM Mono',size:10},callback:v=>v+'h'}, grid:{color:'rgba(255,255,255,0.06)'}, beginAtZero:true }
+      }
+    }
+  }));
+
+  // Stunden pro Tag
+  const dayMap = {};
+  mappedEv.forEach(e => {
+    const key = e.start.toISOString().slice(0,10);
+    dayMap[key] = (dayMap[key]||0) + e.durH;
+  });
+  const days = Object.keys(dayMap).sort();
+  const dayLabels = days.map(d => { const p=d.split('-'); return `${p[2]}.${p[1]}`; });
+  charts.push(new Chart(document.getElementById('day-chart'), {
+    type: 'bar',
+    data: { labels: dayLabels, datasets: [{ data: days.map(d=>+dayMap[d].toFixed(2)), backgroundColor: '#60c8f0', borderWidth:0, borderRadius:2 }] },
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{title:ctx=>days[ctx[0].dataIndex], label:ctx=>`${ctx.parsed.y.toFixed(1)}h`}} },
+      scales:{
+        x:{ ticks:{color:'#888884',font:{family:'DM Mono',size:10},maxRotation:45,autoSkip:true,maxTicksLimit:40}, grid:{color:'rgba(255,255,255,0.04)'} },
+        y:{ ticks:{color:'#888884',font:{family:'DM Mono',size:10},callback:v=>v+'h'}, grid:{color:'rgba(255,255,255,0.06)'}, beginAtZero:true }
+      }
+    }
+  }));
 }
 
 loadMapping();
