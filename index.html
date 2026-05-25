@@ -462,15 +462,21 @@ function parseICS(text) {
       continue;
     }
 
-    // RRULE-Expansion (FREQ=WEEKLY mit optionalem INTERVAL und UNTIL)
+    // RRULE-Expansion (FREQ=WEEKLY mit optionalem INTERVAL, UNTIL oder COUNT)
     const freq     = rrule.match(/FREQ=(\w+)/)?.[1];
     const until    = pd(rrule.match(/UNTIL=([^;]+)/)?.[1]);
     const interval = parseInt(rrule.match(/INTERVAL=(\d+)/)?.[1] || '1');
+    const count    = parseInt(rrule.match(/COUNT=(\d+)/)?.[1]    || '0');
     if (freq !== 'WEEKLY') { events.push({ start, end, durH, summary }); continue; }
 
     const exDateSet = new Set(getAll('EXDATE').map(s => { const d = pd(s); return d ? localKey(d) : null; }).filter(Boolean));
     const durMs     = (end && !isNaN(end)) ? (end - start) : 3600000;
-    const limitDate = until || new Date(start.getFullYear()+2, start.getMonth(), start.getDate());
+    // Enddatum: UNTIL > COUNT > Fallback 2 Jahre
+    const limitDate = until
+      ? until
+      : count
+      ? (() => { const d = new Date(start); d.setDate(d.getDate() + 7 * interval * (count - 1)); return d; })()
+      : new Date(start.getFullYear()+2, start.getMonth(), start.getDate());
     const cur = new Date(start);
     while (cur <= limitDate) {
       if (!exDateSet.has(localKey(cur))) {
