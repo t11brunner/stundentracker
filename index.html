@@ -441,19 +441,45 @@ function parseICS(text) {
   const blocks = text.split('BEGIN:VEVENT');
   for (let i = 1; i < blocks.length; i++) {
     const b = blocks[i];
-    const get = key => { const m = b.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)')); return m ? m[1].trim() : null; };
-    const rawStart = get('DTSTART') || get('DTSTART;VALUE=DATE') || get('DTSTART;TZID=[^:]+');
-    const rawEnd   = get('DTEND')   || get('DTEND;VALUE=DATE')   || get('DTEND;TZID=[^:]+');
+    const get    = key => { const m = b.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)')); return m ? m[1].trim() : null; };
+    const getAll = key => { const re = new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)', 'g'); const res = []; let m; while ((m = re.exec(b)) !== null) res.push(m[1].trim()); return res; };
+    const rawStart = get('DTSTART');
+    const rawEnd   = get('DTEND');
     const summary  = get('SUMMARY') || '';
+    const rrule    = get('RRULE');
     const pd = s => {
       if (!s) return null; s = s.replace(/Z$/,'');
       if (s.length===8) return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),0,0);
       return new Date(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8),+s.slice(9,11)||0,+s.slice(11,13)||0);
     };
+    const localKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const start = pd(rawStart), end = pd(rawEnd);
     if (!start || isNaN(start)) continue;
     const durH = (end && !isNaN(end) && end > start) ? (end-start)/3600000 : null;
-    events.push({ start, end, durH, summary });
+
+    if (!rrule) {
+      events.push({ start, end, durH, summary });
+      continue;
+    }
+
+    // RRULE-Expansion (FREQ=WEEKLY mit optionalem INTERVAL und UNTIL)
+    const freq     = rrule.match(/FREQ=(\w+)/)?.[1];
+    const until    = pd(rrule.match(/UNTIL=([^;]+)/)?.[1]);
+    const interval = parseInt(rrule.match(/INTERVAL=(\d+)/)?.[1] || '1');
+    if (freq !== 'WEEKLY') { events.push({ start, end, durH, summary }); continue; }
+
+    const exDateSet = new Set(getAll('EXDATE').map(s => { const d = pd(s); return d ? localKey(d) : null; }).filter(Boolean));
+    const durMs     = (end && !isNaN(end)) ? (end - start) : 3600000;
+    const limitDate = until || new Date(start.getFullYear()+2, start.getMonth(), start.getDate());
+    const cur = new Date(start);
+    while (cur <= limitDate) {
+      if (!exDateSet.has(localKey(cur))) {
+        const occStart = new Date(cur);
+        const occEnd   = new Date(cur.getTime() + durMs);
+        events.push({ start: occStart, end: occEnd, durH, summary });
+      }
+      cur.setDate(cur.getDate() + 7 * interval);
+    }
   }
   return events;
 }
