@@ -141,6 +141,19 @@
 <!-- UPLOAD -->
 <div id="page-upload" class="page active">
   <div style="max-width:640px;margin:3rem auto;text-align:center;padding:0 2.5rem;">
+    <div class="how-to" id="folder-panel" style="margin-top:0;margin-bottom:1.5rem;text-align:left;">
+      <h3>Kalender-Ordner (Chrome / Edge / Brave)</h3>
+      <div id="folder-status" style="font-size:13px;color:var(--muted);font-family:var(--mono);">Kein Ordner verbunden</div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;">
+        <button class="btn btn-sm btn-accent" onclick="pickFolder()">Ordner auswählen</button>
+        <button class="btn btn-sm" onclick="reloadFolder()" id="folder-reload-btn" style="display:none">Neu laden</button>
+        <button class="btn btn-sm btn-danger" onclick="clearFolder()" id="folder-clear-btn" style="display:none">Trennen</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:0.75rem;line-height:1.6;">
+        Aus Kalender.app als <strong style="color:var(--text)">.ics</strong> in diesen Ordner exportieren — beim nächsten Öffnen sind die Daten automatisch aktuell.
+      </p>
+    </div>
+
     <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
       <span class="drop-icon">[ .ics ]</span>
       <div class="drop-title">Kalender hier ablegen</div>
@@ -234,11 +247,29 @@
     <input type="date" id="filter-to" class="date-input" title="Bis">
     <button class="btn btn-sm btn-accent" onclick="applyFilter()">Anwenden</button>
     <button class="btn btn-sm" onclick="resetFilter()">Zurücksetzen</button>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-family:var(--mono);font-size:12px;color:var(--muted);cursor:pointer;margin-left:0.5rem;">
+      <input type="checkbox" id="filter-cutoff-today" checked onchange="applyFilter()" style="accent-color:var(--accent);cursor:pointer;">
+      <span>Nur bis heute</span>
+    </label>
   </div>
 
   <div id="unmapped-notice" class="unmapped-notice" style="display:none">
     <span id="unmapped-text"></span>
     <button class="btn btn-sm" onclick="switchTab('mapping')">Im Mapping ergänzen →</button>
+  </div>
+
+  <div class="panel full" id="belastung-panel">
+    <div class="section-label">Belastung</div>
+    <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;">
+      <div style="min-width:120px;">
+        <div id="bel-score" style="font-family:var(--mono);font-size:3rem;line-height:1;color:var(--accent);">–</div>
+        <div id="bel-label" style="font-size:13px;margin-top:0.4rem;font-family:var(--mono);color:var(--muted);">–</div>
+      </div>
+      <div style="flex:1;min-width:240px;">
+        <div class="bar-track" style="height:12px;"><div id="bel-bar" class="bar-fill" style="height:100%;width:0%;background:var(--accent);"></div></div>
+        <div id="bel-text" style="margin-top:0.75rem;font-size:13px;color:var(--muted);line-height:1.5;">–</div>
+      </div>
+    </div>
   </div>
 
   <div class="metrics">
@@ -296,10 +327,13 @@ let lastFile = '';
 let filterFrom = null, filterTo = null;
 
 function getFilteredEvents() {
-  if (!filterFrom && !filterTo) return lastEvents;
+  const cutoff = document.getElementById('filter-cutoff-today')?.checked;
+  const now = new Date();
+  if (!filterFrom && !filterTo && !cutoff) return lastEvents;
   return lastEvents.filter(e => {
     if (filterFrom && e.start < filterFrom) return false;
-    if (filterTo && e.start > filterTo) return false;
+    if (filterTo   && e.start > filterTo)   return false;
+    if (cutoff     && e.start > now)        return false;
     return true;
   });
 }
@@ -309,14 +343,16 @@ function applyFilter() {
   const t = document.getElementById('filter-to').value;
   filterFrom = f ? new Date(f) : null;
   filterTo   = t ? new Date(t + 'T23:59:59') : null;
-  renderStats(getFilteredEvents(), lastFile);
+  if (lastEvents.length) renderStats(getFilteredEvents(), lastFile);
 }
 
 function resetFilter() {
   filterFrom = filterTo = null;
   document.getElementById('filter-from').value = '';
   document.getElementById('filter-to').value = '';
-  if (lastEvents.length) renderStats(lastEvents, lastFile);
+  const cb = document.getElementById('filter-cutoff-today');
+  if (cb) cb.checked = true;
+  if (lastEvents.length) renderStats(getFilteredEvents(), lastFile);
 }
 
 function isoWeekLabel(d) {
@@ -325,6 +361,121 @@ function isoWeekLabel(d) {
   const w1 = new Date(t.getFullYear(),0,4);
   const wn = 1 + Math.round(((t-w1)/86400000 - 3 + (w1.getDay()+6)%7)/7);
   return `${t.getFullYear()}-KW${String(wn).padStart(2,'0')}`;
+}
+
+// ── INDEXEDDB (für persistente FileSystemDirectoryHandle) ──
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('stundentracker', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('handles');
+    r.onsuccess = () => res(r.result);
+    r.onerror   = () => rej(r.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('handles', 'readonly').objectStore('handles').get(key);
+    tx.onsuccess = () => res(tx.result);
+    tx.onerror   = () => rej(tx.error);
+  });
+}
+async function idbSet(key, val) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('handles', 'readwrite').objectStore('handles').put(val, key);
+    tx.onsuccess = () => res();
+    tx.onerror   = () => rej(tx.error);
+  });
+}
+async function idbDelete(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('handles', 'readwrite').objectStore('handles').delete(key);
+    tx.onsuccess = () => res();
+    tx.onerror   = () => rej(tx.error);
+  });
+}
+
+// ── KALENDER-ORDNER (File System Access API) ──
+let currentFolderHandle = null;
+
+async function pickFolder() {
+  if (!window.showDirectoryPicker) {
+    alert('Dein Browser unterstützt die File System Access API nicht. Bitte nutze Chrome, Edge oder Brave – oder lade die .ics-Dateien klassisch per Drag-Drop hoch.');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ id: 'stundentracker-cal', mode: 'read' });
+    await idbSet('calendarFolder', handle);
+    currentFolderHandle = handle;
+    await loadFromFolder(handle);
+  } catch (e) {
+    if (e.name !== 'AbortError') console.error(e);
+  }
+}
+
+// Auto-Restore (kein requestPermission – braucht User-Geste).
+async function restoreFolder() {
+  if (!window.showDirectoryPicker) return;
+  let handle;
+  try { handle = await idbGet('calendarFolder'); } catch (e) { return; }
+  if (!handle) return;
+  currentFolderHandle = handle;
+  try {
+    const perm = await handle.queryPermission({ mode: 'read' });
+    if (perm === 'granted') {
+      await loadFromFolder(handle);
+    } else {
+      // Permission muss durch Klick erneuert werden
+      updateFolderStatus(`📁 ${handle.name} · Klick „Neu laden" um Zugriff zu erneuern`, true);
+    }
+  } catch (e) { console.error('restoreFolder failed', e); }
+}
+
+// Manueller Reload – darf requestPermission aufrufen (kommt aus Click-Handler).
+async function reloadFolder() {
+  if (!currentFolderHandle) { await restoreFolder(); return; }
+  try {
+    let perm = await currentFolderHandle.queryPermission({ mode: 'read' });
+    if (perm !== 'granted') perm = await currentFolderHandle.requestPermission({ mode: 'read' });
+    if (perm !== 'granted') { updateFolderStatus('Berechtigung verweigert', false); return; }
+    await loadFromFolder(currentFolderHandle);
+  } catch (e) { console.error('reloadFolder failed', e); }
+}
+
+async function clearFolder() {
+  await idbDelete('calendarFolder');
+  currentFolderHandle = null;
+  updateFolderStatus('Kein Ordner verbunden', false);
+}
+
+async function loadFromFolder(handle) {
+  loadedFiles = [];
+  let count = 0;
+  for await (const entry of handle.values()) {
+    if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.ics')) {
+      try {
+        const file = await entry.getFile();
+        const text = await file.text();
+        loadedFiles.push({ name: entry.name, events: parseICS(text) });
+        count++;
+      } catch (e) { console.warn('Konnte Datei nicht lesen', entry.name, e); }
+    }
+  }
+  const time = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+  updateFolderStatus(`📁 ${handle.name} · ${count} Datei${count===1?'':'en'} · geladen ${time}`, true);
+  renderFileList();
+  if (loadedFiles.length) analyzeAll({ silent: true });
+}
+
+function updateFolderStatus(text, connected) {
+  const s = document.getElementById('folder-status');
+  if (s) s.textContent = text;
+  const r = document.getElementById('folder-reload-btn');
+  const c = document.getElementById('folder-clear-btn');
+  if (r) r.style.display = connected ? '' : 'none';
+  if (c) c.style.display = connected ? '' : 'none';
 }
 
 // ── TABS ──
@@ -571,7 +722,8 @@ function clearFiles() {
   renderFileList();
 }
 
-function analyzeAll() {
+function analyzeAll(opts) {
+  opts = opts || {};
   if (!loadedFiles.length) return;
   // merge all events, deduplicate by uid or start+summary
   const seen = new Set();
@@ -584,14 +736,16 @@ function analyzeAll() {
   });
   lastEvents = merged;
   lastFile = loadedFiles.length === 1 ? loadedFiles[0].name : `${loadedFiles.length} Dateien`;
-  if (!merged.length) { alert('Keine Events gefunden.'); return; }
+  if (!merged.length) { if (!opts.silent) alert('Keine Events gefunden.'); return; }
   // Filter zurücksetzen bei neuer Analyse
   filterFrom = filterTo = null;
   document.getElementById('filter-from').value = '';
   document.getElementById('filter-to').value = '';
-  renderStats(merged, lastFile);
+  const cb = document.getElementById('filter-cutoff-today');
+  if (cb) cb.checked = true;
+  renderStats(getFilteredEvents(), lastFile);
   document.getElementById('tab-stats').style.display = '';
-  switchTab('stats');
+  if (!opts.staySamePage) switchTab('stats');
 }
 
 // ── RENDER STATS ──
@@ -738,7 +892,74 @@ function renderStats(events, fname) {
       }
     }
   }));
+
+  // Belastungswert
+  renderBelastung(events);
 }
+
+// ── BELASTUNG ──
+function calcBelastung(events) {
+  const now = new Date();
+  const today = new Date(now); today.setHours(0,0,0,0);
+  const key = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  // Stunden pro Tag (nur Vergangenheit, nur gemappte Fächer, gültige Dauer)
+  const daily = {};
+  events.forEach(e => {
+    if (!e.durH || e.durH <= 0 || e.durH > 24) return;
+    if (e.start > now) return;
+    if (!resolveSubject(e.summary)) return;
+    daily[key(e.start)] = (daily[key(e.start)] || 0) + e.durH;
+  });
+
+  // Gewichtete letzte 7 Tage (heute=1.0 ... vor 6 Tagen=0.4)
+  let weighted = 0, wSum = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const w = 1 - i * 0.1;
+    weighted += (daily[key(d)] || 0) * w;
+    wSum    += w;
+  }
+  const recent = wSum ? weighted / wSum : 0;
+
+  // 30-Tage-Baseline (Tagesdurchschnitt)
+  let sum30 = 0;
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    sum30 += daily[key(d)] || 0;
+  }
+  const baseline = sum30 / 30;
+
+  const score = baseline > 0
+    ? Math.max(0, Math.min(100, Math.round(50 * recent / baseline)))
+    : 0;
+  return { score, recent, baseline };
+}
+
+function renderBelastung(events) {
+  const { score, recent, baseline } = calcBelastung(events);
+  let label, color, text;
+  if (score < 40)        { label = 'Niedrige Belastung';    color = 'var(--accent)';  text = 'Aktuell ruhig – Reserve für intensivere Wochen.'; }
+  else if (score < 70)   { label = 'Normale Belastung';     color = 'var(--accent2)'; text = 'Dein üblicher Rhythmus.'; }
+  else if (score < 90)   { label = 'Hohe Belastung';        color = '#f0c060';        text = 'Plane bewusst Pausen, sonst kippt\'s.'; }
+  else                   { label = 'Sehr hohe Belastung';   color = '#f06060';        text = 'Gönn dir Erholung – langfristig nicht durchhaltbar.'; }
+
+  const scoreEl = document.getElementById('bel-score');
+  const labelEl = document.getElementById('bel-label');
+  const barEl   = document.getElementById('bel-bar');
+  const textEl  = document.getElementById('bel-text');
+  if (!scoreEl) return;
+  scoreEl.textContent = score;
+  scoreEl.style.color = color;
+  labelEl.textContent = label;
+  labelEl.style.color = color;
+  barEl.style.width = score + '%';
+  barEl.style.background = color;
+  textEl.innerHTML = `${text}<br><span style="opacity:0.7">Letzte 7 Tage: <strong>${recent.toFixed(1)}h/Tag</strong> (gewichtet) · 30-Tage-Schnitt: <strong>${baseline.toFixed(1)}h/Tag</strong></span>`;
+}
+
+// ── AUTO-RESTORE FOLDER ──
+window.addEventListener('DOMContentLoaded', () => { restoreFolder(); });
 
 loadMapping();
 </script>
