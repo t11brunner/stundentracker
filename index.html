@@ -127,18 +127,12 @@
 
     /* PRINT / PDF */
     @media print {
-      header, .tabs, #page-upload, #page-mapping,
+      .masthead, .tabs, #page-upload, #page-mapping,
       .top-bar, #date-filter, #unmapped-notice,
       #pdf-btn { display: none !important; }
       #page-stats { display: block !important; padding: 0; }
-      body { background: #fff; color: #111; }
-      .panel { background: #f8f8f8 !important; border: 1px solid #ddd !important; break-inside: avoid; }
-      .metric { background: #f8f8f8 !important; }
-      .metrics { background: #ddd !important; }
-      .bar-track { background: #e0e0e0 !important; }
-      .section-label, .metric-label { color: #666 !important; }
-      .metric-value { color: #333 !important; }
-      .bar-hours, .subject-code { color: #555 !important; }
+      body { background: #fff; }
+      .panel { break-inside: avoid; }
       .grid-2 { grid-template-columns: 1fr 1fr; }
     }
   </style>
