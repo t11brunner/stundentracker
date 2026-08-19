@@ -848,7 +848,7 @@ function renderStats(events, fname) {
   const wdMax=Math.max(...wdH)||1;
   document.getElementById('weekday-bars').innerHTML = ['Mo','Di','Mi','Do','Fr','Sa','So'].map((d,i)=>`
     <div class="subject-bar"><span class="subject-code">${d}</span>
-    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(wdH[i]/wdMax*100)}%;background:var(--accent2)"></div></div>
+    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(wdH[i]/wdMax*100)}%;background:oklch(0.58 0.09 250)"></div></div>
     <span class="bar-hours">${wdH[i].toFixed(1)}h</span></div>`).join('');
 
   const hourH=Array(24).fill(0);
@@ -857,7 +857,7 @@ function renderStats(events, fname) {
   const hMax=topH[0]?.h||1;
   document.getElementById('hour-bars').innerHTML = topH.map(({i,h})=>`
     <div class="subject-bar"><span class="subject-code">${String(i).padStart(2,'0')}:00</span>
-    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(h/hMax*100)}%;background:var(--accent3)"></div></div>
+    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(h/hMax*100)}%;background:oklch(0.58 0.10 30)"></div></div>
     <span class="bar-hours">${h.toFixed(1)}h</span></div>`).join('');
 
   // Stunden pro Woche
@@ -957,10 +957,10 @@ function calcBelastung(events) {
 function renderBelastung(events) {
   const { score, recent, baseline } = calcBelastung(events);
   let label, color, text;
-  if (score < 40)        { label = 'Niedrige Belastung';    color = 'var(--accent)';  text = 'Aktuell ruhig – Reserve für intensivere Wochen.'; }
-  else if (score < 70)   { label = 'Normale Belastung';     color = 'var(--accent2)'; text = 'Dein üblicher Rhythmus.'; }
-  else if (score < 90)   { label = 'Hohe Belastung';        color = '#f0c060';        text = 'Plane bewusst Pausen, sonst kippt\'s.'; }
-  else                   { label = 'Sehr hohe Belastung';   color = '#f06060';        text = 'Gönn dir Erholung – langfristig nicht durchhaltbar.'; }
+  if (score < 40)        { label = 'Niedrige Belastung';    color = 'var(--accent)';          text = 'Aktuell ruhig – Reserve für intensivere Wochen.'; }
+  else if (score < 70)   { label = 'Normale Belastung';     color = 'var(--status-normal)';   text = 'Dein üblicher Rhythmus.'; }
+  else if (score < 90)   { label = 'Hohe Belastung';        color = 'var(--status-high)';     text = 'Plane bewusst Pausen, sonst kippt\'s.'; }
+  else                   { label = 'Sehr hohe Belastung';   color = 'var(--status-critical)'; text = 'Gönn dir Erholung – langfristig nicht durchhaltbar.'; }
 
   const scoreEl = document.getElementById('bel-score');
   const labelEl = document.getElementById('bel-label');
